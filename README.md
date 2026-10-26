@@ -11,6 +11,7 @@ cargo run --release
 ## Use
 
 - **Open folder…** or **Card: NAME** (mounted volumes with `DCIM`) loads photos recursively.
+- The toolbar sort button cycles Newest first, Oldest first, Name (file modified date).
 - Click toggles selection. Shift-click selects a range. Cmd-A selects all.
 - Double-click opens preview: ←/→ browse, Space (or Enter, S) toggles selection, Esc closes. The top bar shows the selection state.
 - The toolbar theme button cycles System, Light, Dark.

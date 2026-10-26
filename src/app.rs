@@ -3,7 +3,7 @@ use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputState};
@@ -11,7 +11,7 @@ use gpui_kit::component::{ActiveTheme, Theme, ThemeMode, Disableable, Sizable, S
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 
-use crate::config::{Appearance, Config, Destination};
+use crate::config::{Appearance, Config, Destination, SortOrder};
 use crate::library::{self, Kind};
 use crate::transfer::{self, Outcome, Reach};
 
@@ -52,6 +52,7 @@ pub fn bind_keys(cx: &mut App) {
 
 struct Photo {
     path: PathBuf,
+    modified: SystemTime,
     thumb: Option<PathBuf>,
 }
 
@@ -98,6 +99,7 @@ pub struct Piclecor {
     scroll: UniformListScrollHandle,
     // Dropping a task cancels it, so replacing these stops stale work.
     scan_task: Option<Task<()>>,
+    thumb_task: Option<Task<()>>,
     preview_task: Option<Task<()>>,
     job_task: Option<Task<()>>,
     tick_task: Option<Task<()>>,
@@ -133,6 +135,7 @@ impl Piclecor {
             status: "Open a folder or a card.".into(),
             scroll: UniformListScrollHandle::new(),
             scan_task: None,
+            thumb_task: None,
             preview_task: None,
             job_task: None,
             tick_task: None,
@@ -190,6 +193,7 @@ impl Piclecor {
 
     fn open(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
         self.photos.clear();
+        self.thumb_task = None;
         self.selected.clear();
         self.anchor = None;
         self.close_preview();
@@ -200,36 +204,82 @@ impl Piclecor {
         self.persist();
 
         self.scan_task = Some(cx.spawn(async move |this, cx| {
-            let scan_dir = dir.clone();
-            let paths = cx
+            let entries = cx
                 .background_executor()
-                .spawn(async move { library::scan(&scan_dir) })
+                .spawn(async move { library::scan(&dir) })
                 .await;
 
-            let ok = this.update(cx, |this, cx| {
-                this.photos = paths
-                    .iter()
-                    .map(|p| Photo { path: p.clone(), thumb: None })
+            this.update(cx, |this, cx| {
+                this.photos = entries
+                    .into_iter()
+                    .map(|e| Photo { path: e.path, modified: e.modified, thumb: None })
                     .collect();
                 this.status = format!("{} photos", this.photos.len()).into();
-                cx.notify();
-            });
-            if ok.is_err() {
-                return;
-            }
+                this.apply_sort(cx);
+            })
+            .ok();
+        }));
+        cx.notify();
+    }
 
-            for (n, batch) in paths.chunks(THUMB_BATCH).enumerate() {
+    fn cycle_sort(&mut self, cx: &mut Context<Self>) {
+        self.config.sort = self.config.sort.next();
+        self.persist();
+        self.apply_sort(cx);
+    }
+
+    /// Selection, anchor and preview are indices, so they follow their photos by path.
+    fn apply_sort(&mut self, cx: &mut Context<Self>) {
+        let path_of = |i: usize, photos: &[Photo]| photos.get(i).map(|p| p.path.clone());
+        let selected: Vec<PathBuf> = self.selected.iter().filter_map(|&i| path_of(i, &self.photos)).collect();
+        let anchor = self.anchor.and_then(|i| path_of(i, &self.photos));
+        let preview = self.preview.and_then(|i| path_of(i, &self.photos));
+
+        match self.config.sort {
+            SortOrder::NewestFirst => self.photos.sort_by(|a, b| {
+                b.modified.cmp(&a.modified).then_with(|| a.path.cmp(&b.path))
+            }),
+            SortOrder::OldestFirst => self.photos.sort_by(|a, b| {
+                a.modified.cmp(&b.modified).then_with(|| a.path.cmp(&b.path))
+            }),
+            SortOrder::Name => self.photos.sort_by(|a, b| a.path.cmp(&b.path)),
+        }
+
+        let index: HashMap<&PathBuf, usize> =
+            self.photos.iter().enumerate().map(|(i, p)| (&p.path, i)).collect();
+        self.selected = selected.iter().filter_map(|p| index.get(p).copied()).collect();
+        self.anchor = anchor.and_then(|p| index.get(&p).copied());
+        self.preview = preview.and_then(|p| index.get(&p).copied());
+
+        self.scroll.scroll_to_item(0, ScrollStrategy::Top);
+        self.load_thumbs(cx);
+        cx.notify();
+    }
+
+    /// Restarted after each sort so thumbnails fill in display order.
+    fn load_thumbs(&mut self, cx: &mut Context<Self>) {
+        let todo: Vec<PathBuf> = self
+            .photos
+            .iter()
+            .filter(|p| p.thumb.is_none())
+            .map(|p| p.path.clone())
+            .collect();
+
+        self.thumb_task = Some(cx.spawn(async move |this, cx| {
+            for batch in todo.chunks(THUMB_BATCH) {
                 let batch = batch.to_vec();
                 let thumbs = cx
                     .background_executor()
-                    .spawn(async move { render_all(&batch, Kind::Thumb) })
+                    .spawn(async move {
+                        let thumbs = render_all(&batch, Kind::Thumb);
+                        batch.into_iter().zip(thumbs).collect::<HashMap<_, _>>()
+                    })
                     .await;
 
-                let start = n * THUMB_BATCH;
                 let ok = this.update(cx, |this, cx| {
-                    for (i, thumb) in thumbs.into_iter().enumerate() {
-                        if let Some(photo) = this.photos.get_mut(start + i) {
-                            photo.thumb = thumb;
+                    for photo in this.photos.iter_mut().filter(|p| p.thumb.is_none()) {
+                        if let Some(t) = thumbs.get(&photo.path) {
+                            photo.thumb = t.clone();
                         }
                     }
                     cx.notify();
@@ -239,7 +289,6 @@ impl Piclecor {
                 }
             }
         }));
-        cx.notify();
     }
 
     fn click(&mut self, ix: usize, ev: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
@@ -596,6 +645,13 @@ impl Piclecor {
                     .overflow_hidden()
                     .child(div().text_sm().truncate().child(folder))
                     .child(div().text_xs().text_color(theme.muted_foreground).child(count)),
+            )
+            .child(
+                Button::new("sort")
+                    .small()
+                    .ghost()
+                    .label(self.config.sort.label())
+                    .on_click(cx.listener(|this, _, _, cx| this.cycle_sort(cx))),
             )
             .child(
                 Button::new("theme")

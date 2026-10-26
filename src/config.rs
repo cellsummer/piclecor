@@ -42,12 +42,42 @@ impl Appearance {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SortOrder {
+    /// Camera cards write files at capture, so newest first shows the latest shoot.
+    #[default]
+    NewestFirst,
+    OldestFirst,
+    Name,
+}
+
+impl SortOrder {
+    pub fn next(self) -> Self {
+        match self {
+            Self::NewestFirst => Self::OldestFirst,
+            Self::OldestFirst => Self::Name,
+            Self::Name => Self::NewestFirst,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::NewestFirst => "Sort: Newest first",
+            Self::OldestFirst => "Sort: Oldest first",
+            Self::Name => "Sort: Name",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Config {
     pub destinations: Vec<Destination>,
     pub last_folder: Option<PathBuf>,
     #[serde(default)]
     pub appearance: Appearance,
+    #[serde(default)]
+    pub sort: SortOrder,
 }
 
 fn config_path() -> Option<PathBuf> {

@@ -3,7 +3,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::cache_dir;
 
@@ -43,8 +43,13 @@ pub fn is_image(path: &Path) -> bool {
         .is_some_and(|e| IMAGE_EXTS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
-/// Recursive, sorted by path so camera folders keep shooting order.
-pub fn scan(root: &Path) -> Vec<PathBuf> {
+pub struct Entry {
+    pub path: PathBuf,
+    pub modified: SystemTime,
+}
+
+/// Recursive. Caller sorts.
+pub fn scan(root: &Path) -> Vec<Entry> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
 
@@ -58,13 +63,14 @@ pub fn scan(root: &Path) -> Vec<PathBuf> {
             }
             match entry.file_type() {
                 Ok(t) if t.is_dir() => stack.push(path),
-                Ok(t) if t.is_file() && is_image(&path) => out.push(path),
+                Ok(t) if t.is_file() && is_image(&path) => {
+                    let modified = entry.metadata().and_then(|m| m.modified());
+                    out.push(Entry { path, modified: modified.unwrap_or(UNIX_EPOCH) });
+                }
                 _ => {}
             }
         }
     }
-
-    out.sort();
     out
 }
 
