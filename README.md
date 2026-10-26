@@ -8,6 +8,13 @@ macOS photo picker built on GPUI Kit. View photos on a card or folder, select, c
 cargo run --release
 ```
 
+As an app with its icon (drag the result to `/Applications`):
+
+```sh
+scripts/bundle.sh        # builds target/release/Piclecor.app
+scripts/make-icon.sh     # only after editing assets/icon.svg
+```
+
 ## Use
 
 - **Open folder…** or **Card: NAME** (mounted volumes with `DCIM`) loads photos recursively.
