@@ -82,6 +82,9 @@ pub struct Piclecor {
     photos: Vec<Photo>,
     selected: BTreeSet<usize>,
     anchor: Option<usize>,
+    /// Selection before the last single click. A double-click arrives as a
+    /// single click first, so opening the preview restores this.
+    before_click: Option<(usize, BTreeSet<usize>, Option<usize>)>,
     preview: Option<usize>,
     /// Source path to rendered preview file, for the current photo and its neighbours.
     previews: HashMap<PathBuf, PathBuf>,
@@ -122,6 +125,7 @@ impl Piclecor {
             photos: Vec::new(),
             selected: BTreeSet::new(),
             anchor: None,
+            before_click: None,
             preview: None,
             previews: HashMap::new(),
             preview_cache: RetainAllImageCache::new(cx),
@@ -293,10 +297,18 @@ impl Piclecor {
 
     fn click(&mut self, ix: usize, ev: &ClickEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
-        if ev.click_count() == 2 {
+        if ev.click_count() >= 2 {
+            if let Some((at, selected, anchor)) = self.before_click.take()
+                && at == ix
+            {
+                self.selected = selected;
+                self.anchor = anchor;
+            }
             self.show_preview(ix, window, cx);
             return;
         }
+
+        self.before_click = Some((ix, self.selected.clone(), self.anchor));
         let pick = if ev.modifiers().shift { Pick::Range } else { Pick::Toggle };
         self.pick(ix, pick);
         cx.notify();
