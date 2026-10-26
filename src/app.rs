@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{ActiveTheme, Theme, ThemeMode, Disableable, Sizable, StyledExt, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
@@ -768,13 +769,17 @@ impl Piclecor {
                                 })),
                         ),
                 )
-                .child(
+                .child({
+                    // Sidebar width truncates long paths; hover shows the whole one.
+                    let full = d.target.clone();
                     div()
+                        .id(("target", i))
                         .text_xs()
                         .truncate()
                         .text_color(theme.muted_foreground)
-                        .child(d.target.clone()),
-                )
+                        .tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
+                        .child(d.target.clone())
+                })
                 .child(self.render_reach(&d.target, cx))
                 .child(
                     h_flex()
