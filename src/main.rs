@@ -1,5 +1,6 @@
 mod app;
 mod config;
+mod dock;
 mod library;
 mod transfer;
 
@@ -10,6 +11,7 @@ actions!(piclecor, [Quit]);
 fn main() {
     gpui_kit::application().run(|cx| {
         gpui_kit::init(cx);
+        dock::set_icon();
 
         cx.on_action(|_: &Quit, cx| cx.quit());
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);

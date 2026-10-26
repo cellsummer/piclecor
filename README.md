@@ -8,7 +8,7 @@ macOS photo picker built on GPUI Kit. View photos on a card or folder, select, c
 cargo run --release
 ```
 
-As an app with its icon (drag the result to `/Applications`):
+The binary sets its own Dock icon, so `cargo run` shows it too. As a standalone app (drag the result to `/Applications`):
 
 ```sh
 scripts/bundle.sh        # builds target/release/Piclecor.app
