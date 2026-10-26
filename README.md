@@ -11,7 +11,7 @@ cargo run --release
 The binary sets its own Dock icon, so `cargo run` shows it too. As a standalone app (drag the result to `/Applications`):
 
 ```sh
-scripts/bundle.sh        # builds target/release/Piclecor.app
+scripts/bundle.sh --install   # builds Piclecor.app and copies it to /Applications
 scripts/make-icon.sh     # only after editing assets/icon.svg
 ```
 

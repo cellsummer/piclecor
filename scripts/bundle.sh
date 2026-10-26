@@ -1,6 +1,10 @@
 #!/bin/sh
-# Builds target/release/Piclecor.app. macOS shows the icon only for a bundle.
+# Builds target/release/Piclecor.app. With --install, also copies it to /Applications.
 set -eu
+
+install_dir=/Applications
+install=false
+[ "${1:-}" = "--install" ] && install=true
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 app="$root/target/release/Piclecor.app"
@@ -34,4 +38,15 @@ EOF
 
 # Ad-hoc signature so Gatekeeper runs the local build.
 codesign --force --sign - "$app" >/dev/null 2>&1 || true
-echo "$app"
+
+if $install; then
+    # Quit a running copy so the replaced binary takes effect on next launch.
+    pkill -x piclecor 2>/dev/null || true
+    rm -rf "$install_dir/Piclecor.app"
+    cp -R "$app" "$install_dir/"
+    # Refresh Launch Services so Finder and Spotlight show the new icon.
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$install_dir/Piclecor.app"
+    echo "$install_dir/Piclecor.app"
+else
+    echo "$app"
+fi
