@@ -28,6 +28,9 @@ const CELL_GROUP: &str = "cell";
 const THUMB_BATCH: usize = 8;
 const TICK: Duration = Duration::from_millis(250);
 
+/// Neighbours on each side rendered and decoded ahead, so ←/→ lands on a sharp image.
+const PREFETCH: usize = 2;
+
 const GRID_CONTEXT: &str = "Piclecor";
 const PREVIEW_CONTEXT: &str = "Preview";
 
@@ -79,7 +82,10 @@ pub struct Piclecor {
     selected: BTreeSet<usize>,
     anchor: Option<usize>,
     preview: Option<usize>,
-    preview_img: Option<PathBuf>,
+    /// Source path to rendered preview file, for the current photo and its neighbours.
+    previews: HashMap<PathBuf, PathBuf>,
+    /// Owned cache so decoded previews can be evicted; the global asset store never frees.
+    preview_cache: Entity<RetainAllImageCache>,
     volumes: Vec<PathBuf>,
     name_input: Entity<InputState>,
     target_input: Entity<InputState>,
@@ -115,7 +121,8 @@ impl Piclecor {
             selected: BTreeSet::new(),
             anchor: None,
             preview: None,
-            preview_img: None,
+            previews: HashMap::new(),
+            preview_cache: RetainAllImageCache::new(cx),
             volumes: library::camera_volumes(),
             name_input,
             target_input,
@@ -261,31 +268,71 @@ impl Piclecor {
         self.anchor = Some(ix);
     }
 
+    fn preview_range(&self, ix: usize) -> Range<usize> {
+        ix.saturating_sub(PREFETCH)..(ix + PREFETCH + 1).min(self.photos.len())
+    }
+
     fn show_preview(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(photo) = self.photos.get(ix) else { return };
-        let src = photo.path.clone();
+        if ix >= self.photos.len() {
+            return;
+        }
         self.preview = Some(ix);
         self.anchor = Some(ix);
         window.focus(&self.preview_focus, cx);
-        self.preview_img = None;
+        self.evict_previews(ix, window, cx);
+
+        // Current photo first so it never waits behind a neighbour.
+        let mut order = vec![ix];
+        for d in 1..=PREFETCH {
+            order.extend(ix.checked_add(d).filter(|&i| i < self.photos.len()));
+            order.extend(ix.checked_sub(d));
+        }
+        let todo: Vec<PathBuf> = order
+            .into_iter()
+            .map(|i| self.photos[i].path.clone())
+            .filter(|p| !self.previews.contains_key(p))
+            .collect();
 
         self.preview_task = Some(cx.spawn(async move |this, cx| {
-            let out = cx
-                .background_executor()
-                .spawn(async move { library::render(&src, Kind::Preview) })
-                .await;
-            this.update(cx, |this, cx| {
-                this.preview_img = out;
-                cx.notify();
-            })
-            .ok();
+            for src in todo {
+                let s = src.clone();
+                let out = cx
+                    .background_executor()
+                    .spawn(async move { library::render(&s, Kind::Preview) })
+                    .await;
+                let Some(out) = out else { continue };
+
+                let ok = this.update(cx, |this, cx| {
+                    this.previews.insert(src, out);
+                    cx.notify();
+                });
+                if ok.is_err() {
+                    return;
+                }
+            }
         }));
         cx.notify();
     }
 
+    fn evict_previews(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let keep: Vec<&PathBuf> = self.preview_range(ix).map(|i| &self.photos[i].path).collect();
+        let stale: Vec<PathBuf> = self
+            .previews
+            .keys()
+            .filter(|p| !keep.contains(p))
+            .cloned()
+            .collect();
+
+        for src in stale {
+            if let Some(out) = self.previews.remove(&src) {
+                let res = Resource::Path(out.into());
+                self.preview_cache.update(cx, |c, cx| c.remove(&res, window, cx));
+            }
+        }
+    }
+
     fn close_preview(&mut self) {
         self.preview = None;
-        self.preview_img = None;
         self.preview_task = None;
     }
 
@@ -306,6 +353,8 @@ impl Piclecor {
 
     fn leave_preview(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.close_preview();
+        self.previews.clear();
+        self.preview_cache.update(cx, |c, cx| c.clear(window, cx));
         window.focus(&self.focus, cx);
         cx.notify();
     }
@@ -752,7 +801,16 @@ impl Piclecor {
         let theme = cx.theme();
         let photo = &self.photos[ix];
         let selected = self.selected.contains(&ix);
-        let src = self.preview_img.clone().or_else(|| photo.thumb.clone());
+        let full = self.previews.get(&photo.path).cloned();
+        let thumb = photo.thumb.clone();
+        let cache = self.preview_cache.clone();
+
+        // Decoding happens at layout, so hidden copies warm the cache for ←/→.
+        let ahead: Vec<PathBuf> = self
+            .preview_range(ix)
+            .filter(|&i| i != ix)
+            .filter_map(|i| self.previews.get(&self.photos[i].path).cloned())
+            .collect();
         let position = format!("{} / {}", ix + 1, self.photos.len());
         let frame = if selected { theme.primary } else { transparent_black() };
 
@@ -824,7 +882,16 @@ impl Piclecor {
                 .rounded_md()
                 .border_4()
                 .border_color(frame)
-                .when_some(src, |d, p| d.child(img(p).size_full().object_fit(ObjectFit::Contain))),
+                .child(
+                    // Thumbnail underneath, full image on top: while the full image
+                    // decodes, the thumbnail shows through instead of a blank frame.
+                    div()
+                        .relative()
+                        .size_full()
+                        .when_some(thumb, |d, p| d.child(layer(p)))
+                        .when_some(full, |d, p| d.child(layer(p).image_cache(&cache)))
+                        .children(ahead.into_iter().map(|p| layer(p).image_cache(&cache).invisible())),
+                ),
         );
 
         v_flex()
@@ -841,6 +908,10 @@ impl Piclecor {
             .child(bar)
             .child(stage)
     }
+}
+
+fn layer(path: PathBuf) -> Img {
+    img(path).absolute().inset_0().size_full().object_fit(ObjectFit::Contain)
 }
 
 fn render_all(paths: &[PathBuf], kind: Kind) -> Vec<Option<PathBuf>> {
