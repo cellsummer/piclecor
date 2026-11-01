@@ -6,7 +6,7 @@ mod transfer;
 
 use gpui_kit::*;
 
-actions!(piclecor, [Quit]);
+actions!(pincomb, [Quit]);
 
 fn main() {
     gpui_kit::application().run(|cx| {
@@ -17,8 +17,8 @@ fn main() {
         cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
         app::bind_keys(cx);
         cx.set_menus(vec![Menu {
-            name: "Piclecor".into(),
-            items: vec![MenuItem::action("Quit Piclecor", Quit)],
+            name: "Pincomb".into(),
+            items: vec![MenuItem::action("Quit Pincomb", Quit)],
             disabled: false,
         }]);
         cx.on_window_closed(|cx, _| cx.quit()).detach();
@@ -27,13 +27,13 @@ fn main() {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitlebarOptions {
-                title: Some("Piclecor".into()),
+                title: Some("Pincomb".into()),
                 ..Default::default()
             }),
             ..Default::default()
         };
 
-        gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| app::Piclecor::new(window, cx)))
+        gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| app::Pincomb::new(window, cx)))
             .expect("open window");
         cx.activate(true);
     });

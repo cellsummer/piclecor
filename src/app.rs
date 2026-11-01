@@ -32,10 +32,10 @@ const TICK: Duration = Duration::from_millis(250);
 /// Neighbours on each side rendered and decoded ahead, so ←/→ lands on a sharp image.
 const PREFETCH: usize = 2;
 
-const GRID_CONTEXT: &str = "Piclecor";
+const GRID_CONTEXT: &str = "Pincomb";
 const PREVIEW_CONTEXT: &str = "Preview";
 
-actions!(piclecor, [SelectAll, PrevPhoto, NextPhoto, ToggleSelect, ClosePreview]);
+actions!(pincomb, [SelectAll, PrevPhoto, NextPhoto, ToggleSelect, ClosePreview]);
 
 /// Preview keys live in their own context so sidebar inputs keep space and arrows.
 pub fn bind_keys(cx: &mut App) {
@@ -75,7 +75,7 @@ enum Pick {
     Range,
 }
 
-pub struct Piclecor {
+pub struct Pincomb {
     focus: FocusHandle,
     preview_focus: FocusHandle,
     config: Config,
@@ -109,7 +109,7 @@ pub struct Piclecor {
     tick_task: Option<Task<()>>,
 }
 
-impl Piclecor {
+impl Pincomb {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let config = Config::load();
         let last = config.last_folder.clone();
@@ -1012,7 +1012,7 @@ fn short(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-impl Render for Piclecor {
+impl Render for Pincomb {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 

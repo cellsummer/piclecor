@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::transfer;
 
-const APP_DIR: &str = "piclecor";
+const APP_DIR: &str = "pincomb";
 const CONFIG_FILE: &str = "config.json";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -1,4 +1,4 @@
-# Piclecor
+# Pincomb
 
 macOS photo picker built on GPUI Kit. View photos on a card or folder, select, copy to local or SSH destinations, or back up a whole folder.
 
@@ -11,7 +11,7 @@ cargo run --release
 The binary sets its own Dock icon, so `cargo run` shows it too. As a standalone app (drag the result to `/Applications`):
 
 ```sh
-scripts/bundle.sh --install   # builds Piclecor.app and copies it to /Applications
+scripts/bundle.sh --install   # builds Pincomb.app and copies it to /Applications
 scripts/make-icon.sh     # only after editing assets/icon.svg
 ```
 
@@ -38,6 +38,6 @@ The app adds a destination only when its folder exists. Each destination shows w
 
 ## Files
 
-- Config: `~/Library/Application Support/piclecor/config.json`
-- Thumbnail cache: `~/Library/Caches/piclecor`
+- Config: `~/Library/Application Support/pincomb/config.json`
+- Thumbnail cache: `~/Library/Caches/pincomb`
 - Thumbnails come from `sips`, so HEIC and camera RAW work.
